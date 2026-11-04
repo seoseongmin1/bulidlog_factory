@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import ActionAgent from "./components/ActionAgent.jsx";
 import Anomalies from "./components/Anomalies.jsx";
 import Briefing from "./components/Briefing.jsx";
 import Chat from "./components/Chat.jsx";
@@ -18,6 +19,7 @@ export const CATEGORIES = [
   { id: "day", label: "하루 보기" },
   { id: "handover", label: "교대 인수인계" },
   { id: "forecast", label: "경보 예측" },
+  { id: "agent", label: "조치 에이전트" },
   { id: "replay", label: "감시 재생" },
   { id: "power-factor", label: "역률 개선" },
   { id: "manual", label: "매뉴얼" },
@@ -47,6 +49,8 @@ export default function App() {
   const [doc, setDoc] = useState(() => parseHash().doc);
   // 대응 기록이 새로 저장될 때마다 늘려 통계를 다시 불러오게 한다.
   const [recorded, setRecorded] = useState(0);
+  // 경보 예측에서 '조치 에이전트에게 맡기기'를 누르면 그 시각으로 에이전트를 실행한다. 같은 시각을 다시 눌러도 실행되도록 번호를 붙인다.
+  const [delegated, setDelegated] = useState(null);
   const onRecorded = () => setRecorded((n) => n + 1);
 
   useEffect(() => {
@@ -68,6 +72,10 @@ export default function App() {
   const openDay = (next) => {
     setDate(next);
     open("day");
+  };
+  const delegate = (time) => {
+    setDelegated((prev) => ({ time, nonce: (prev?.nonce ?? 0) + 1 }));
+    open("agent");
   };
   const openDoc = (next) => {
     setDoc(next);
@@ -113,8 +121,11 @@ export default function App() {
             <Handover />
           </Panel>
           <Panel id="forecast" active={active}>
-            <Forecast onRecorded={onRecorded} />
+            <Forecast onRecorded={onRecorded} onDelegate={delegate} />
             <ResponseStats version={recorded} />
+          </Panel>
+          <Panel id="agent" active={active}>
+            <ActionAgent request={delegated} />
           </Panel>
           <Panel id="replay" active={active}>
             <Replay onRecorded={onRecorded} />
