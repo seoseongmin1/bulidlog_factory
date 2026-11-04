@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analysis, dayahead, responses
+from . import analysis, handover, knowledge, responses
 from .agent import run_turn
 from . import forecast as alarm_forecast
 from .briefing import daily_briefing
@@ -154,15 +154,46 @@ def forecast(time: str) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.get("/api/day-ahead/{date}")
-def day_ahead(date: str) -> dict:
-    """하루 전까지의 데이터로 본 그 날의 위험 시간대와 계획, 같은 방식의 9~12월 채점 결과. AI는 쓰지 않는다."""
+@app.get("/api/handover/{date}/{shift}")
+def shift_handover(date: str, shift: str, ai: bool = True) -> dict:
+    """교대 인수인계서. ai=false면 코드가 쓴 문서를 바로 준다. 키가 없거나 AI가 실패해도 코드가 쓴 문서를 돌려준다."""
     try:
-        return {**dayahead.day_ahead(date), "scores": dayahead.scores()}
+        return handover.handover(date, shift, openai.OpenAI() if ai and has_credentials() else None)
     except DataUnavailableError:
         raise
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/manual/search")
+def manual_search(q: str, top_k: int = 3) -> dict:
+    """현장 매뉴얼 검색. AI 없이 검색만 한다."""
+    try:
+        return knowledge.search(q, top_k)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/manual/alarm/{target}")
+def manual_for_alarm(target: str) -> dict:
+    """경보 카드의 '조치 매뉴얼'. 같은 경보에는 늘 같은 절을 준다."""
+    try:
+        return {"results": knowledge.for_alarm(target)}
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/manual/docs")
+def manual_docs() -> dict:
+    return {"items": knowledge.documents(), "notice": knowledge.NOTICE}
+
+
+@app.get("/api/manual/docs/{doc_id}")
+def manual_doc(doc_id: str) -> dict:
+    try:
+        return knowledge.document(doc_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
 
 
 @app.post("/api/alarm-responses")

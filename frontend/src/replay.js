@@ -63,7 +63,31 @@ export function replayEvents(rows, upto) {
 export function eventText(event) {
   if (event.type === "alarm") return `${event.name} 경보가 켜졌어요 (${LEVEL_LABEL[event.level]})`;
   if (event.type === "false") return `${event.name} 헛경보였어요. 경보 뒤 1시간 안에 기준을 넘지 않았어요.`;
-  if (event.lead === null) return `${event.name}이(가) 기준을 넘었어요. 미리 알리지 못했어요.`;
-  if (event.lead === 0) return `${event.name}이(가) 기준을 넘었어요. 경보와 같은 때예요.`;
-  return `${event.name}이(가) 기준을 넘었어요. 경보가 ${event.lead}분 먼저 알렸어요.`;
+  if (event.lead === null) return `${event.name}이 기준을 넘었어요. 미리 알리지 못했어요.`;
+  if (event.lead === 0) return `${event.name}이 기준을 넘었어요. 경보와 같은 때예요.`;
+  return `${event.name}이 기준을 넘었어요. 경보가 ${event.lead}분 먼저 알렸어요.`;
+}
+
+// 교대가 끝나는 시각. 06:00에는 전날 22시에 시작한 C조가 끝난다.
+const SHIFT_ENDS = {
+  "06:00": { shift: "C", hours: "22:00~06:00", previousDay: true },
+  "14:00": { shift: "A", hours: "06:00~14:00", previousDay: false },
+  "22:00": { shift: "B", hours: "14:00~22:00", previousDay: false },
+};
+
+/** rows[0..upto] 사이에 교대가 끝난 시각마다 '인수인계서 자동 작성' 알림을 만든다. */
+export function shiftEvents(rows, upto) {
+  const events = [];
+  for (let i = 0; i <= upto && i < rows.length; i += 1) {
+    const end = SHIFT_ENDS[rows[i].time];
+    if (end) events.push({ index: i, time: rows[i].time, type: "handover", target: end.shift, ...end });
+  }
+  return events;
+}
+
+/** YYYY-MM-DD의 하루 전 날짜 */
+export function previousDate(date) {
+  const d = new Date(`${date}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
 }

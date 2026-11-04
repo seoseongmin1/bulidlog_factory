@@ -3,13 +3,12 @@
 AI 키가 없거나 AI가 실패하거나 AI 문장에 주어진 데이터에 없는 숫자가 들어 있으면 코드가 만든 문장을 그대로 쓴다.
 """
 import json
-import re
 from collections import OrderedDict
 
 import openai
 
-from . import analysis
-from .agent import model_name
+from . import analysis, grounding
+from .llm import model_name
 
 PF_GOOD = 90.0  # 역률 기준. 이 공장은 하루 역률이 90%를 밑도는 날이 절반이라, 주의는 85% 미만에서만 띄운다.
 PF_WARN = 85.0
@@ -100,10 +99,6 @@ def _rule_lines(report: dict) -> tuple[list[str], str]:
     return lines, action
 
 
-def _numbers(text: str) -> set[float]:
-    return {float(n.replace(",", "")) for n in re.findall(r"\d[\d,]*(?:\.\d+)?", text)}
-
-
 def _ai_lines(client: openai.OpenAI, facts: dict) -> tuple[list[str], str] | None:
     response = client.chat.completions.create(
         model=model_name(),
@@ -124,7 +119,7 @@ def _ai_lines(client: openai.OpenAI, facts: dict) -> tuple[list[str], str] | Non
     if not isinstance(action, str) or not action.strip():
         return None
     # 사실에 없는 숫자가 하나라도 있으면 AI 문장을 쓰지 않는다.
-    if not _numbers(" ".join([*lines, action])) <= _numbers(json.dumps(facts, ensure_ascii=False)):
+    if not grounding.check(" ".join([*lines, action]), facts, strict=True)["ok"]:
         return None
     return [x.strip() for x in lines], action.strip()
 

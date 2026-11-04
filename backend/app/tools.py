@@ -1,7 +1,7 @@
 """모델에게 공개하는 도구 정의와 실행기."""
 import json
 
-from . import analysis, dayahead, forecast
+from . import analysis, forecast, handover, knowledge
 
 DATE = {"type": "string", "description": "YYYY-MM-DD 형식의 날짜. 2018-01-01 ~ 2018-12-31"}
 METRIC = {"type": "string", "enum": list(analysis.METRICS), "description": "분석할 지표"}
@@ -85,6 +85,18 @@ TOOLS = [
         {"start": DATE, "end": DATE, "target_pct": {"type": "number", "description": "목표 역률(%). 80~99, 보통 90"}},
     ),
     _tool(
+        "search_manual",
+        "현장 매뉴얼(예시 문서: 경보 대응 절차, 콘덴서 점검, 대형 설비 기동 순서, 교대 인수인계 기준, 경보 응답 기준, 특근 신고, 용어 설명)에서 "
+        "질문과 관련된 절을 찾는다. 무엇을 해야 하는지, 절차, 규정, 용어를 물으면 쓴다. 결과의 cite 표기로 출처를 밝힌다.",
+        {"query": {"type": "string", "description": "찾을 내용. 예: 역률 경보가 켜지면 할 일"}},
+    ),
+    _tool(
+        "get_shift_handover",
+        "교대(A조 06~14시, B조 14~22시, C조 22시~다음 날 06시)의 인수인계 내용을 만든다. 그 조의 사용량과 평소 대비, 켜진 경보와 "
+        "실제 초과, 작업자 응답, 미응답 경보, 다음 조 시작 1시간 경보, 참고 매뉴얼을 준다.",
+        {"date": DATE, "shift": {"type": "string", "enum": list(handover.SHIFTS), "description": "교대 조"}},
+    ),
+    _tool(
         "forecast_alarm",
         "고른 시각을 '지금'으로 보고 앞으로 1시간 안에 사용량(15분 수요전력)이나 역률(09~22시, 85%)이 기준을 넘을 확률과 "
         "좋음·주의·위험, 할 일을 머신러닝 모델로 예측한다. 같은 모델의 9~12월 채점 결과도 준다.",
@@ -99,12 +111,6 @@ TOOLS = [
         "summarize_alarms",
         "기간의 경보 횟수, 헛경보, 실제로 기준을 넘은 횟수와 미리 알린 비율을 구한다. 시간대별 사용량 경보 칸 수는 차트로 표시된다.",
         {"start": DATE, "end": DATE},
-    ),
-    _tool(
-        "forecast_day_ahead",
-        "고른 날을 '내일'로 보고, 하루 전까지의 데이터로 그날 2시간 구간마다 사용량 기준을 넘을 위험 시간대(주의·위험)와 "
-        "미리 준비할 계획을 구한다. 지난 4주 같은 날 유형에서 넘은 날의 비율로 본 것이다. 평소 사용량은 차트로 표시된다. 9~12월 채점 결과도 준다.",
-        {"date": DATE},
     ),
 ]
 
@@ -135,10 +141,11 @@ _HANDLERS = {
     "simulate_peak_cap": analysis.simulate_peak_cap,
     "get_daily_report": analysis.daily_report,
     "plan_power_factor_correction": analysis.plan_power_factor_correction,
+    "search_manual": lambda query: knowledge.search(query, 3),
+    "get_shift_handover": handover.agent_handover,
     "forecast_alarm": forecast.agent_forecast,
     "get_alarm_timeline": forecast.agent_timeline,
     "summarize_alarms": forecast.summarize_alarms,
-    "forecast_day_ahead": dayahead.agent_day_ahead,
 }
 
 
@@ -156,8 +163,6 @@ def _chart_for(name: str, args: dict, result: dict) -> dict | None:
             "kind": "bar",
             "rows": rows,
         }
-    if name == "forecast_day_ahead":
-        return {"title": f"평소 사용량 ({args['date']}, 기준 {result['사용량_기준_kw']}kW)", "unit": "kW", "kind": "line", "rows": rows}
     if name == "get_alarm_timeline":
         return {"title": f"15분 수요전력 ({args['date']}, 기준 {result['사용량_기준_kw']}kW)", "unit": "kW", "kind": "line", "rows": rows}
     metric = result.get("metric", "power_factor" if name == "analyze_power_factor" else "usage_kwh")

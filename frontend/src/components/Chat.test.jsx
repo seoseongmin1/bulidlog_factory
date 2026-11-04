@@ -2,7 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { chartMock, ok, stubFetch } from "../test/helpers.jsx";
-import Chat, { MAX_LENGTH, SUGGESTIONS } from "./Chat.jsx";
+import Chat, { linkCitations, MAX_LENGTH, SUGGESTIONS } from "./Chat.jsx";
 
 vi.mock("./Chart.jsx", () => chartMock());
 
@@ -44,10 +44,10 @@ const sendButton = () => screen.getByRole("button", { name: "보내기" });
 
 afterEach(() => vi.unstubAllGlobals());
 
-test("추천 질문 4개가 보인다", () => {
+test("추천 질문 6개가 보인다", () => {
   stubServer({ chat: () => Promise.resolve(sse([])) });
   render(<Chat />);
-  expect(SUGGESTIONS).toHaveLength(4);
+  expect(SUGGESTIONS).toHaveLength(6);
   for (const question of SUGGESTIONS) {
     expect(screen.getByRole("button", { name: question })).toBeInTheDocument();
   }
@@ -63,7 +63,7 @@ test("빈 질문이나 공백만 있는 질문은 보내지지 않고 화면도 
   await userEvent.type(box(), "{Enter}");
 
   expect(chatCalls(fetchMock)).toHaveLength(0);
-  expect(screen.getAllByRole("button", { name: /\?|줘|돼/ })).toHaveLength(4);
+  expect(screen.getAllByRole("button", { name: /\?|줘|돼/ })).toHaveLength(6);
 });
 
 test("질문 입력 칸은 2,000자까지만 받는다", () => {
@@ -137,4 +137,38 @@ test("API 키가 없으면 미리 안내한다", async () => {
   stubServer({ ready: false, chat: () => Promise.resolve(sse([])) });
   render(<Chat />);
   expect(await screen.findByRole("status")).toHaveTextContent("OPENAI_API_KEY");
+});
+
+
+test("답변 아래에 숫자 검증 결과가 붙고, 매뉴얼 출처는 매뉴얼 탭 링크가 된다", async () => {
+  const events = [
+    { type: "session", session_id: "s1" },
+    { type: "tool_call", name: "search_manual", input: {} },
+    { type: "tool_result", name: "search_manual", is_error: false },
+    { type: "answer", text: "조정기의 콘덴서 단계를 확인하세요 [SOP-EN-02 2. 경보가 켜지면]." },
+    { type: "verification", checked: 3, grounded: 2, ungrounded: ["194"], ok: false },
+  ];
+  stubServer({ chat: () => Promise.resolve(sse(events)) });
+  render(<Chat />);
+  await userEvent.click(screen.getByRole("button", { name: SUGGESTIONS[4] }));
+
+  expect(await screen.findByText(/숫자 3개 중 1개는 계산 결과에서 찾지 못했어요: 194/)).toBeInTheDocument();
+  expect(screen.getByText("✓ 현장 매뉴얼 검색")).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "[SOP-EN-02 2. 경보가 켜지면]" })).toHaveAttribute("href", "#manual:SOP-EN-02");
+});
+
+test("숫자가 모두 맞으면 일치 배지를 보여 준다", async () => {
+  const events = [
+    { type: "answer", text: "2,015kWh를 썼어요." },
+    { type: "verification", checked: 1, grounded: 1, ungrounded: [], ok: true },
+  ];
+  stubServer({ chat: () => Promise.resolve(sse(events)) });
+  render(<Chat />);
+  await userEvent.click(screen.getByRole("button", { name: SUGGESTIONS[0] }));
+  expect(await screen.findByText("✓ 숫자 1개 모두 계산 결과와 일치")).toBeInTheDocument();
+});
+
+test("이미 링크인 출처는 다시 바꾸지 않는다", () => {
+  expect(linkCitations("[GUIDE-01 2. 역률]")).toBe("[\\[GUIDE-01 2. 역률\\]](#manual:GUIDE-01)");
+  expect(linkCitations("[SOP-EN-01](https://example.com)")).toBe("[SOP-EN-01](https://example.com)");
 });

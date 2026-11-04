@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { eventText, replayEvents } from "./replay.js";
+import { eventText, previousDate, replayEvents, shiftEvents } from "./replay.js";
 import { timeline } from "./test/timeline.js";
 
 const index = (time) => timeline().rows.findIndex((r) => r.time === time);
@@ -12,7 +12,7 @@ test("경보가 켜진 때, 위험으로 오른 때, 실제로 넘은 때와 먼
     ["12:45", "alarm", "danger"],
     ["13:15", "over", 60],
   ]);
-  expect(eventText(events[2])).toBe("사용량이(가) 기준을 넘었어요. 경보가 60분 먼저 알렸어요.");
+  expect(eventText(events[2])).toBe("사용량이 기준을 넘었어요. 경보가 60분 먼저 알렸어요.");
 });
 
 test("지금 시각 뒤의 일은 알림에 없다", () => {
@@ -42,4 +42,16 @@ test("경보 없이 넘으면 미리 알리지 못했다고 쓴다", () => {
 test("09~22시 밖의 역률(없음)은 경보로 세지 않는다", () => {
   const { rows } = timeline();
   expect(replayEvents(rows, 10).filter((e) => e.target === "power_factor")).toEqual([]);
+});
+
+test("교대가 끝나는 06:00·14:00·22:00마다 인수인계 알림을 만든다", () => {
+  const rows = Array.from({ length: 96 }, (_, i) => ({ time: `${String(Math.floor(i / 4)).padStart(2, "0")}:${String((i % 4) * 15).padStart(2, "0")}` }));
+  expect(shiftEvents(rows, 23)).toEqual([]);
+  expect(shiftEvents(rows, 95).map((e) => [e.time, e.shift, e.previousDay])).toEqual([
+    ["06:00", "C", true],
+    ["14:00", "A", false],
+    ["22:00", "B", false],
+  ]);
+  expect(previousDate("2018-10-01")).toBe("2018-09-30");
+  expect(previousDate("2018-03-01")).toBe("2018-02-28");
 });

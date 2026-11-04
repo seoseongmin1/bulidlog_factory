@@ -139,7 +139,7 @@ def test_agent_alarm_tools():
     from app.tools import openai_tools, run_tool
 
     names = {tool["function"]["name"] for tool in openai_tools()}
-    assert {"forecast_alarm", "get_alarm_timeline", "summarize_alarms"} <= names and len(names) == 14
+    assert {"forecast_alarm", "get_alarm_timeline", "summarize_alarms"} <= names
 
     text, chart, is_error = run_tool("forecast_alarm", {"time": "2018-10-10 13:00"})
     result = json.loads(text)

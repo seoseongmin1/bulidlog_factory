@@ -122,7 +122,8 @@ def test_every_tool_runs_with_valid_input():
         "forecast_alarm": {"time": "2018-10-10 13:00"},
         "get_alarm_timeline": {"date": "2018-10-10"},
         "summarize_alarms": {"start": "2018-12-01", "end": "2018-12-31"},
-        "forecast_day_ahead": {"date": "2018-10-10"},
+        "search_manual": {"query": "역률 경보 대응"},
+        "get_shift_handover": {"date": "2018-10-10", "shift": "B"},
         "plan_power_factor_correction": {"start": "2018-01-01", "end": "2018-12-31", "target_pct": 90},
     }
     assert set(samples) == {tool["name"] for tool in TOOLS}

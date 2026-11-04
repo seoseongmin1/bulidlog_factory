@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { getJson } from "../api.js";
 import { useAsync } from "../useAsync.js";
+import AlarmManual from "./AlarmManual.jsx";
 import AlarmTimeline from "./AlarmTimeline.jsx";
 import AsyncPanel from "./AsyncPanel.jsx";
 import ResponseButtons from "./ResponseButtons.jsx";
@@ -46,7 +47,7 @@ function Reasons({ reasons }) {
   );
 }
 
-function AlarmCard({ title, level, label, children, action, reasons, response }) {
+function AlarmCard({ title, target, level, label, children, action, reasons, response }) {
   return (
     <div className={`alarm-card ${LEVEL_CLASS[level]}`}>
       <div className="card-head">
@@ -60,6 +61,7 @@ function AlarmCard({ title, level, label, children, action, reasons, response })
       <p className="briefing-action">
         <strong>할 일</strong> {action}
       </p>
+      {level !== "good" && <AlarmManual target={target} />}
       {response}
     </div>
   );
@@ -128,7 +130,7 @@ export default function Forecast({ onRecorded }) {
                 </p>
               )}
               <div className="alarm-grid">
-                <AlarmCard title="사용량" {...data.usage} response={responseFor("usage", "사용량", data.usage)}>
+                <AlarmCard title="사용량" target="usage" {...data.usage} response={responseFor("usage", "사용량", data.usage)}>
                   <p>
                     기준을 넘을 가능성 <strong>{data.usage.probability_pct}%</strong>
                   </p>
@@ -136,7 +138,7 @@ export default function Forecast({ onRecorded }) {
                     지금 {data.usage.now_kw.toLocaleString("ko-KR")}kW · 기준 {data.usage.limit_kw.toLocaleString("ko-KR")}kW
                   </p>
                 </AlarmCard>
-                <AlarmCard title="전기 효율(역률)" {...data.power_factor} response={responseFor("power_factor", "역률", data.power_factor)}>
+                <AlarmCard title="전기 효율(역률)" target="power_factor" {...data.power_factor} response={responseFor("power_factor", "역률", data.power_factor)}>
                   {data.power_factor.watched ? (
                     <p>
                       {data.power_factor.limit_pct}% 아래로 떨어질 가능성 <strong>{data.power_factor.probability_pct}%</strong>

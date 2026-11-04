@@ -69,8 +69,8 @@ def test_tool_result_goes_back_to_model_and_answer_is_returned(api):
     history = []
     events = list(run_turn(api["client"], history, "1월 요약해줘"))
 
-    assert [e["type"] for e in events] == ["tool_call", "tool_result", "answer"]
-    assert events[-1]["text"] == "1월 사용량은 많았습니다."
+    assert [e["type"] for e in events] == ["tool_call", "tool_result", "answer", "verification"]
+    assert events[-2]["text"] == "1월 사용량은 많았습니다."
 
     result = api["requests"][1]["messages"][-1]
     assert result["role"] == "tool" and result["tool_call_id"] == "call_1"
@@ -120,7 +120,7 @@ def test_broken_tool_arguments_are_reported_to_model(api):
     api["responses"] = [broken, ANSWER]
     events = list(run_turn(api["client"], [], "질문"))
     assert events[1]["is_error"] is True
-    assert events[-1]["type"] == "answer"
+    assert events[-2]["type"] == "answer"
 
 
 def test_followup_question_keeps_history(api):
@@ -153,4 +153,22 @@ def test_endless_tool_calls_stop_at_limit(api):
 def test_length_limited_answer_is_marked_as_cut(api):
     api["responses"] = [completion({"content": "일부"}, "length")]
     events = list(run_turn(api["client"], [], "질문"))
-    assert "잘렸습니다" in events[-1]["text"]
+    assert "잘렸습니다" in events[-2]["text"]
+
+
+def test_answer_numbers_are_checked_against_tool_results(api):
+    from app import analysis
+
+    s = analysis.summarize("2018-01-01", "2018-01-31")
+    grounded = f"1월 사용량은 {s['usage_kwh']:,.0f}kWh이고 최대 수요전력은 {s['peak_kw']}kW({s['peak_at'][-5:]})였습니다."
+    api["responses"] = [TOOL_CALL, completion({"content": grounded}, "stop")]
+    verification = list(run_turn(api["client"], [], "1월 요약해줘"))[-1]
+    assert verification["type"] == "verification"
+    assert verification["ok"] and verification["checked"] >= 3 and verification["ungrounded"] == []
+
+
+def test_made_up_numbers_are_flagged(api):
+    api["responses"] = [TOOL_CALL, completion({"content": "1월에는 평소보다 37.5% 많은 98,765kWh를 썼습니다."}, "stop")]
+    verification = list(run_turn(api["client"], [], "1월 요약해줘"))[-1]
+    assert not verification["ok"]
+    assert set(verification["ungrounded"]) == {"37.5", "98,765"}
