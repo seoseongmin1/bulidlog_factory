@@ -119,6 +119,11 @@ def test_every_tool_runs_with_valid_input():
         "analyze_power_factor": {"start": "2018-01-01", "end": "2018-01-31", "threshold": 90},
         "simulate_peak_cap": {"start": "2018-01-01", "end": "2018-01-31", "reduction_pct": 10},
         "get_daily_report": {"date": "2018-01-18"},
+        "forecast_alarm": {"time": "2018-10-10 13:00"},
+        "get_alarm_timeline": {"date": "2018-10-10"},
+        "summarize_alarms": {"start": "2018-12-01", "end": "2018-12-31"},
+        "forecast_day_ahead": {"date": "2018-10-10"},
+        "plan_power_factor_correction": {"start": "2018-01-01", "end": "2018-12-31", "target_pct": 90},
     }
     assert set(samples) == {tool["name"] for tool in TOOLS}
     for name, args in samples.items():
@@ -132,3 +137,36 @@ def test_chart_comes_from_tool_rows():
     content, chart, _ = run_tool("get_timeseries", {"start": "2018-01-01", "end": "2018-01-31", "freq": "day", "metric": "usage_kwh"})
     assert chart["rows"] == json.loads(content)["rows"]
     assert chart["kind"] == "line"
+
+
+def test_power_factor_plan_needs_auto_controller_not_fixed_capacitor():
+    result = analysis.plan_power_factor_correction("2018-01-01", "2018-12-31", 90)
+    assert result["현재"]["목표_미달_칸_비율_pct"] == 20.5
+    auto, fixed = result["자동_조정기_추천"], result["고정_콘덴서_비교"]
+    assert auto["용량_kvar"] == 40 and auto["용량_kvar"] % analysis.PF_STEP_KVAR == 0
+    assert auto["목표_미달_칸_비율_pct"] <= 100 - analysis.PF_COVERAGE_PCT and auto["과보상_칸_비율_pct"] == 0
+    # 같은 용량이라도 고정 콘덴서는 가벼운 부하에서 과보상되어 오히려 나빠진다.
+    assert fixed["용량_kvar"] == 40 and fixed["목표_미달_칸_비율_pct"] > result["현재"]["목표_미달_칸_비율_pct"]
+    assert [row["label"] for row in result["rows"]] == [f"{h:02d}시" for h in range(9, 22)]
+    assert max(result["rows"], key=lambda row: row["value"])["label"] == "11시"
+
+
+def test_power_factor_plan_zero_when_already_good_and_bad_input():
+    easy = analysis.plan_power_factor_correction("2018-01-01", "2018-12-31", 80)
+    assert easy["자동_조정기_추천"]["용량_kvar"] == 0 and easy["고정_콘덴서_비교"] is None
+    with pytest.raises(ValueError, match="80~99%"):
+        analysis.plan_power_factor_correction("2018-01-01", "2018-12-31", 100)
+    with pytest.raises(ValueError, match="데이터 범위"):
+        analysis.plan_power_factor_correction("2018-12-01", "2019-01-31", 90)
+
+
+def test_power_factor_plan_api():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    client = TestClient(app)
+    ok = client.get("/api/power-factor-plan", params={"start": "2018-01-01", "end": "2018-12-31", "target": 95})
+    assert ok.status_code == 200 and ok.json()["자동_조정기_추천"]["용량_kvar"] == 90
+    bad = client.get("/api/power-factor-plan", params={"start": "2018-01-01", "end": "2018-12-31", "target": 50})
+    assert bad.status_code == 400

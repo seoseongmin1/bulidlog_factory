@@ -10,8 +10,10 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analysis
+from . import analysis, dayahead, responses
 from .agent import run_turn
+from . import forecast as alarm_forecast
+from .briefing import daily_briefing
 from .db import ROOT, DataUnavailableError
 
 DIST_DIR = ROOT / "frontend" / "dist"
@@ -21,6 +23,14 @@ app = FastAPI(title="Factory Energy Agent")
 # 화면을 아직 빌드하지 않았어도 서버가 켜지도록 폴더 존재 확인은 요청이 올 때 한다.
 app.mount("/assets", StaticFiles(directory=DIST_DIR / "assets", check_dir=False), name="assets")
 sessions: OrderedDict[str, list] = OrderedDict()
+
+
+class AlarmResponse(BaseModel):
+    time: str
+    target: str
+    level: str
+    probability_pct: int
+    response: str
 
 
 class ChatRequest(BaseModel):
@@ -98,6 +108,81 @@ def report(date: str) -> dict:
     except (ValueError, KeyError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {**data, "markdown": analysis.report_markdown(data)}
+
+
+@app.get("/api/briefing/{date}")
+def briefing(date: str, ai: bool = True) -> dict:
+    """그날의 자동 요약. ai=false면 코드 요약만 바로 준다. 키가 없거나 AI가 실패해도 코드 요약을 돌려준다."""
+    try:
+        return daily_briefing(date, openai.OpenAI() if ai and has_credentials() else None)
+    except DataUnavailableError:
+        raise
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/power-factor-plan")
+def power_factor_plan(start: str, end: str, target: float) -> dict:
+    """09~22시 역률을 목표까지 올리는 콘덴서 용량 계산. 자동 조정기와 고정 콘덴서를 비교한다."""
+    try:
+        return analysis.plan_power_factor_correction(start, end, target)
+    except DataUnavailableError:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/forecast/day/{date}")
+def forecast_day(date: str) -> dict:
+    """하루 96칸의 경보와 실제 값, 그날 경보가 몇 분 먼저 켜졌는지"""
+    try:
+        return alarm_forecast.day_timeline(date)
+    except DataUnavailableError:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/forecast")
+def forecast(time: str) -> dict:
+    """time(YYYY-MM-DD HH:MM)을 '지금'으로 본 1시간 경보와, 같은 모델의 9~12월 채점 결과. AI는 쓰지 않는다."""
+    try:
+        return {**alarm_forecast.forecast_at(time), "scores": alarm_forecast.scores()}
+    except DataUnavailableError:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/day-ahead/{date}")
+def day_ahead(date: str) -> dict:
+    """하루 전까지의 데이터로 본 그 날의 위험 시간대와 계획, 같은 방식의 9~12월 채점 결과. AI는 쓰지 않는다."""
+    try:
+        return {**dayahead.day_ahead(date), "scores": dayahead.scores()}
+    except DataUnavailableError:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/alarm-responses")
+def save_alarm_response(body: AlarmResponse) -> dict:
+    """경보에 대한 작업자의 응답(조치함·무시함·오경보)을 이 컴퓨터의 파일에 기록한다."""
+    try:
+        return responses.record(body.time, body.target, body.level, body.probability_pct, body.response)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/alarm-responses/day/{date}")
+def alarm_responses_day(date: str) -> dict:
+    return responses.lookup(date)
+
+
+@app.get("/api/alarm-responses/stats")
+def alarm_response_stats() -> dict:
+    """쌓인 대응 기록의 통계와, 문턱을 올렸을 때의 변화"""
+    return responses.stats()
 
 
 @app.post("/api/chat")

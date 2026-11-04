@@ -23,6 +23,13 @@ ANOMALY_WINDOW_DAYS = 28
 ANOMALY_MIN_DEVIATION_PCT = 30.0
 MAD_TO_SIGMA = 1.4826
 
+# 역률은 09~22시만 본다. 밤에는 부하가 적어 역률이 늘 낮게 나온다. 경보 예측(forecast.py)도 같은 시간을 쓴다.
+PF_HOURS = (9, 22)
+# 역률 개선 계산: 자동 조정기 단계, 찾아볼 최대 용량, 목표를 넘어야 하는 칸 비율
+PF_STEP_KVAR = 10
+PF_MAX_KVAR = 300
+PF_COVERAGE_PCT = 95.0
+
 
 def _slice(start: str, end: str) -> pd.DataFrame:
     df = load_data()
@@ -225,6 +232,74 @@ def power_factor_report(start: str, end: str, threshold: float) -> dict:
         "부하별_역률": {LOAD_TYPE_KO[k]: v for k, v in by_load.items()},
         "역률이_가장_낮은_시간대": [f"{h:02d}시 ({v}%)" for h, v in worst.items()],
         "rows": _rows(hourly, [f"{h:02d}시" for h in hourly.index]),
+    }
+
+
+def _pf_below(kwh: np.ndarray, kvarh: np.ndarray, target_pct: float) -> np.ndarray:
+    return kwh / np.hypot(kwh, kvarh) * 100 < target_pct
+
+
+def _auto_compensation(need_kvar: np.ndarray, kvarh: np.ndarray, capacity: float) -> np.ndarray:
+    """자동 역률 조정기: 필요한 만큼 단계를 켜되, 과보상(진상)이 되면 한 단계 덜 켠다. 용량을 넘지 않는다."""
+    up = np.ceil(need_kvar / PF_STEP_KVAR) * PF_STEP_KVAR
+    steps = np.where(up / INTERVALS_PER_HOUR > kvarh, np.floor(need_kvar / PF_STEP_KVAR) * PF_STEP_KVAR, up)
+    return np.minimum(steps, capacity)
+
+
+def plan_power_factor_correction(start: str, end: str, target_pct: float) -> dict:
+    """09~22시의 15분 칸마다 목표 역률까지 필요한 콘덴서 용량(kVar)을 구하고, 자동 조정기와 고정 콘덴서를 비교한다."""
+    if not 80 <= target_pct <= 99:
+        raise ValueError("목표 역률은 80~99% 사이로 입력하세요.")
+    frame = _slice(start, end)
+    hours = frame.index.hour
+    day = frame[(hours >= PF_HOURS[0]) & (hours < PF_HOURS[1]) & (frame["usage_kwh"] > 0)]
+    if day.empty:
+        raise ValueError("해당 기간 09~22시에 전력 사용 기록이 없습니다.")
+    kwh, kvarh = day["usage_kwh"].to_numpy(float), day["lag_kvarh"].to_numpy(float)
+    allowed = kwh * np.tan(np.arccos(target_pct / 100))
+    need = np.clip(kvarh - allowed, 0, None) * INTERVALS_PER_HOUR  # 15분 동안 필요한 kVar
+
+    def outcome(comp_kvar: np.ndarray) -> dict:
+        net = kvarh - comp_kvar / INTERVALS_PER_HOUR
+        return {
+            "목표_미달_칸_비율_pct": round(float(_pf_below(kwh, np.abs(net), target_pct).mean()) * 100, 1),
+            "과보상_칸_비율_pct": round(float((net < -1e-9).mean()) * 100, 1),
+        }
+
+    recommended = None
+    # 0부터 찾으므로, 이미 목표를 충분히 넘는 기간이면 0kVar(설치 필요 없음)가 나온다.
+    for capacity in range(0, PF_MAX_KVAR + 1, PF_STEP_KVAR):
+        result = outcome(_auto_compensation(need, kvarh, capacity))
+        if result["목표_미달_칸_비율_pct"] <= 100 - PF_COVERAGE_PCT:
+            recommended = {"용량_kvar": capacity, "단계_kvar": PF_STEP_KVAR, **result}
+            break
+    fixed = None
+    if recommended and recommended["용량_kvar"] > 0:
+        fixed = {"용량_kvar": recommended["용량_kvar"], **outcome(np.full_like(need, recommended["용량_kvar"]))}
+
+    hourly = pd.Series(need, index=day.index).groupby(day.index.hour).mean()
+    return {
+        "기간": f"{start} ~ {end}",
+        "목표_역률_pct": target_pct,
+        "보는_시간": f"{PF_HOURS[0]:02d}~{PF_HOURS[1]:02d}시",
+        "현재": {
+            "가중_평균_역률": _power_factor(day),
+            "목표_미달_칸_비율_pct": round(float(_pf_below(kwh, kvarh, target_pct).mean()) * 100, 1),
+        },
+        "필요한_보상_kvar": {
+            "중앙값": round(float(np.percentile(need, 50)), 1),
+            "상위_10%": round(float(np.percentile(need, 90)), 1),
+            "상위_5%": round(float(np.percentile(need, 95)), 1),
+            "최대": round(float(need.max()), 1),
+        },
+        "자동_조정기_추천": recommended,
+        "추천_기준": f"자동 조정기({PF_STEP_KVAR}kVar 단위)로 09~22시 칸의 {PF_COVERAGE_PCT:.0f}% 이상이 목표를 넘는 가장 작은 용량. "
+        f"{PF_MAX_KVAR}kVar까지 찾아 없으면 null.",
+        "고정_콘덴서_비교": fixed,
+        "주의": "15분 평균으로 한 산술 계산입니다. 순간 변동, 고조파, 설비 위치는 반영하지 않았으므로 실제 용량은 현장 측정과 전문가 검토로 정하세요. "
+        "금액은 계산하지 않습니다.",
+        "metric": "power_factor_need",
+        "rows": [{"label": f"{h:02d}시", "value": round(float(v), 1)} for h, v in hourly.items()],
     }
 
 

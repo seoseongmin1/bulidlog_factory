@@ -22,7 +22,7 @@ function downloadMarkdown(markdown, date) {
   }
 }
 
-export default function Report({ date, onDateChange, sectionRef }) {
+export default function Report({ date, onDateChange }) {
   const inRange = Boolean(date) && date >= MIN_DATE && date <= MAX_DATE;
   const state = useAsync(() => (inRange ? getJson(`/api/report/${date}`) : Promise.resolve(null)), [date, inRange]);
   const [saveError, setSaveError] = useState(null);
@@ -39,7 +39,7 @@ export default function Report({ date, onDateChange, sectionRef }) {
   };
 
   return (
-    <section className="card" ref={sectionRef} aria-label="일일 보고서">
+    <section className="card" aria-label="일일 보고서">
       <div className="card-head">
         <h2>일일 보고서</h2>
         <input
