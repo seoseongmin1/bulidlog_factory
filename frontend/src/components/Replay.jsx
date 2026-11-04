@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { getJson } from "../api.js";
-import { eventText, replayEvents } from "../replay.js";
+import { eventText, previousDate, replayEvents, shiftEvents } from "../replay.js";
 import { useAsync } from "../useAsync.js";
 import { summaryText } from "./AlarmTimeline.jsx";
 import AsyncPanel from "./AsyncPanel.jsx";
 import Chart from "./Chart.jsx";
 import { DEFAULT_FORECAST_DATE } from "./Forecast.jsx";
+import { HandoverView } from "./Handover.jsx";
 import ResponseButtons from "./ResponseButtons.jsx";
 import { MAX_DATE, MIN_DATE } from "./Report.jsx";
 import { useAlarmResponses } from "../responses.js";
@@ -37,6 +38,7 @@ function Player({ data, onRecorded }) {
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState("normal");
+  const [picked, setPicked] = useState(null);
   const { saved, save } = useAlarmResponses(data.date, onRecorded);
 
   useEffect(() => {
@@ -49,7 +51,12 @@ function Player({ data, onRecorded }) {
   }, [index, last]);
 
   const row = data.rows[index];
-  const events = replayEvents(data.rows, index);
+  const handoverDate = (event) => (event.previousDay ? previousDate(data.date) : data.date);
+  // 1월 1일 06:00의 C조는 2017년에 시작해 데이터가 없으므로 뺀다.
+  const shifts = shiftEvents(data.rows, index).filter((event) => handoverDate(event) >= MIN_DATE);
+  const events = [...replayEvents(data.rows, index), ...shifts].sort((a, b) => a.index - b.index);
+  const latestShift = shifts.at(-1);
+  const shown = shifts.find((event) => event.shift === picked) ?? latestShift;
   const finished = index >= last;
   const play = () => {
     if (finished) setIndex(0);
@@ -128,7 +135,16 @@ function Player({ data, onRecorded }) {
             {[...events].reverse().map((event) => (
               <li key={`${event.type}-${event.target}-${event.index}`} className={`replay-${event.type}`}>
                 <time>{event.time}</time>
-                {eventText(event)}
+                {event.type === "handover" ? (
+                  <>
+                    {event.shift}조({event.hours}) 인수인계서를 자동으로 작성했어요.{" "}
+                    <button type="button" className="link-button" onClick={() => setPicked(event.shift)}>
+                      보기
+                    </button>
+                  </>
+                ) : (
+                  eventText(event)
+                )}
                 {event.type === "alarm" && (
                   <ResponseButtons
                     alarm={{
@@ -147,6 +163,13 @@ function Player({ data, onRecorded }) {
           </ol>
         )}
       </div>
+
+      {shown && (
+        <div className="replay-handover-panel" aria-label="자동 작성된 인수인계서">
+          <h3>자동 작성된 인수인계서</h3>
+          <HandoverView key={`${handoverDate(shown)}-${shown.shift}`} date={handoverDate(shown)} shift={shown.shift} compact />
+        </div>
+      )}
 
       {finished && (
         <ul className="tl-summary">

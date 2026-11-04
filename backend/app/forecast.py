@@ -386,6 +386,54 @@ def day_timeline(date: str) -> dict:
     }
 
 
+def window_alarms(start: pd.Timestamp, end: pd.Timestamp) -> dict:
+    """[start, end) 구간에서 켜진 경보 구간과 실제로 기준을 넘은 구간. 교대 인수인계서에 쓴다.
+
+    구간 시작 시각에 이미 켜져 있던 경보도 이 구간의 경보로 센다. 초과마다 경보가 몇 분 먼저 켜졌는지(lead)를 함께 준다.
+    """
+    m = _model()
+    s = m["s"]
+    ts, origins = s["ts"], m["origins"]
+    mask = np.asarray((ts >= start) & (ts < end))
+    ml, cut = m["scores"]["ml"], m["cutoffs"]["ml"]
+    actual = {"usage": s["kw"] > s["limit_kw"], "power_factor": (s["pf"] < PF_LIMIT) & s["daytime"]}
+    # 역률은 앞으로 1시간 안에 09~22시가 있는 시점에만 경보를 낸다(forecast_at과 같다).
+    watched = np.zeros(s["n"], bool)
+    watched[origins] = np.column_stack([s["daytime"][origins + k] for k in range(1, STEPS_AHEAD + 1)]).any(axis=1)
+    clock = lambda i: f"{ts[i]:%H:%M}"  # noqa: E731
+    result = {"limit_kw": round(s["limit_kw"], 1), "limit_pct": PF_LIMIT}
+    for target, name in TARGETS.items():
+        prob = np.zeros(s["n"])
+        prob[origins] = ml[target]
+        level = np.zeros(s["n"], int)
+        level[origins] = (ml[target] >= cut[target][0]).astype(int) + (ml[target] >= cut[target][1]).astype(int)
+        if target == "power_factor":
+            level[~watched] = 0
+        alarm = level > 0
+        alarms = [
+            {
+                "시작": clock(a), "끝": f"{ts[b - 1] + pd.Timedelta(minutes=15):%H:%M}", "time": f"{ts[a]:%Y-%m-%d %H:%M}",
+                "end_time": f"{ts[b - 1] + pd.Timedelta(minutes=15):%Y-%m-%d %H:%M}",
+                "단계": LEVELS["danger" if level[a:b].max() == 2 else "warn"],
+                "level": "danger" if level[a:b].max() == 2 else "warn",
+                "최고_확률_pct": round(float(prob[a:b].max()) * 100),
+                "처음_확률_pct": round(float(prob[a]) * 100),
+            }
+            for a, b in _runs(alarm & mask)
+        ]
+        exceed = []
+        for a, b in _runs(actual[target] & mask):
+            earlier = [k for k in range(STEPS_AHEAD, -1, -1) if a - k >= 0 and alarm[a - k]]
+            values = s["kw"][a:b] if target == "usage" else s["pf"][a:b]
+            exceed.append({
+                "시작": clock(a), "끝": f"{ts[b - 1] + pd.Timedelta(minutes=15):%H:%M}",
+                ("최고_kw" if target == "usage" else "최저_pct"): round(float(values.max() if target == "usage" else values.min()), 1),
+                "몇분_먼저": earlier[0] * 15 if earlier else None,
+            })
+        result[target] = {"이름": name, "경보": alarms, "초과": exceed}
+    return result
+
+
 def _period_mask(s: dict, start: str, end: str) -> np.ndarray:
     try:
         a, b = pd.Timestamp(start), pd.Timestamp(end)

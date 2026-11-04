@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { chartMock, failed, ok, stubFetch } from "./test/helpers.jsx";
-import App from "./App.jsx";
+import App, { parseHash } from "./App.jsx";
 
 vi.mock("./components/Chart.jsx", () => chartMock());
 
@@ -42,11 +42,26 @@ test("주소의 #카테고리로 열 수 있다", () => {
   expect(screen.getByRole("tab", { name: "역률 개선" })).toHaveAttribute("aria-selected", "true");
 });
 
-test("이상한 날에서 날짜를 누르면 하루 보기로 옮겨 그 날짜를 연다", async () => {
+test("개요의 이상한 날에서 날짜를 누르면 하루 보기로 옮겨 그 날짜를 연다", async () => {
   render(<App />);
-  await userEvent.click(screen.getByRole("tab", { name: "이상한 날" }));
-  await userEvent.click(await within(panel("이상한 날")).findByRole("button", { name: /2018-05-26/ }));
+  await userEvent.click(await within(panel("개요")).findByRole("button", { name: /2018-05-26/ }));
 
   expect(screen.getByRole("tab", { name: "하루 보기" })).toHaveAttribute("aria-selected", "true");
   expect(within(panel("하루 보기")).getByLabelText("보고서 날짜")).toHaveValue("2018-05-26");
+});
+
+test("탭은 일곱 개이고 '내일 예측'과 따로 있던 '이상한 날' 탭은 없다", () => {
+  render(<App />);
+  const names = screen.getAllByRole("tab").map((tab) => tab.textContent);
+  expect(names).toEqual(["개요", "하루 보기", "교대 인수인계", "경보 예측", "감시 재생", "역률 개선", "매뉴얼"]);
+});
+
+test("#manual:문서번호 주소로 매뉴얼 탭을 열고, 출처 링크를 누르면 그 탭으로 옮긴다", async () => {
+  expect(parseHash("#manual:SOP-EN-02")).toEqual({ id: "manual", doc: "SOP-EN-02" });
+  expect(parseHash("#없는곳")).toEqual({ id: "overview", doc: null });
+
+  render(<App />);
+  window.location.hash = "manual:SOP-EN-02";
+  window.dispatchEvent(new HashChangeEvent("hashchange"));
+  await vi.waitFor(() => expect(screen.getByRole("tab", { name: "매뉴얼" })).toHaveAttribute("aria-selected", "true"));
 });

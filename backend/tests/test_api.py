@@ -59,3 +59,19 @@ def test_index_serves_built_screen_or_explains(monkeypatch, tmp_path):
 
     (tmp_path / "index.html").write_text("<p>화면</p>", encoding="utf-8")
     assert client.get("/").status_code == 200
+
+
+def test_manual_endpoints():
+    found = client.get("/api/manual/search", params={"q": "역률 경보가 켜지면"}).json()
+    assert found["results"][0]["doc_id"] == "SOP-EN-02"
+    assert client.get("/api/manual/search", params={"q": " "}).status_code == 400
+    assert client.get("/api/manual/alarm/usage").json()["results"][0]["doc_id"] == "SOP-EN-01"
+    assert client.get("/api/manual/alarm/nothing").status_code == 404
+    docs = client.get("/api/manual/docs").json()
+    assert len(docs["items"]) >= 8 and "예시 문서" in docs["notice"]
+    assert client.get("/api/manual/docs/SOP-OP-01").json()["title"] == "교대 인수인계 작성 기준"
+    assert client.get("/api/manual/docs/none").status_code == 404
+
+
+def test_day_ahead_was_removed():
+    assert client.get("/api/day-ahead/2018-10-10").status_code in (404, 405)

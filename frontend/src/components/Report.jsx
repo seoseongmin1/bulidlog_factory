@@ -1,26 +1,12 @@
 import { useEffect, useState } from "react";
 import { getJson } from "../api.js";
+import { downloadMarkdown } from "../download.js";
 import { useAsync } from "../useAsync.js";
 import AsyncPanel, { ErrorNotice } from "./AsyncPanel.jsx";
 import MarkdownView from "./MarkdownView.jsx";
 
 export const MIN_DATE = "2018-01-01";
 export const MAX_DATE = "2018-12-31";
-
-/** 보고서를 브라우저의 다운로드 폴더에 energy-report-날짜.md 파일로 저장한다. */
-function downloadMarkdown(markdown, date) {
-  const url = URL.createObjectURL(new Blob([`${markdown}\n`], { type: "text/markdown;charset=utf-8" }));
-  try {
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `energy-report-${date}.md`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-  } finally {
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-}
 
 export default function Report({ date, onDateChange }) {
   const inRange = Boolean(date) && date >= MIN_DATE && date <= MAX_DATE;
@@ -31,7 +17,7 @@ export default function Report({ date, onDateChange }) {
 
   const save = (markdown) => {
     try {
-      downloadMarkdown(markdown, date);
+      downloadMarkdown(markdown, `energy-report-${date}.md`);
       setSaveError(null);
     } catch (error) {
       setSaveError(error instanceof Error && error.message ? error.message : "알 수 없는 오류입니다.");

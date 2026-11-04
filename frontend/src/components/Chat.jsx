@@ -7,6 +7,8 @@ export const SUGGESTIONS = [
   "역률이 낮은 시간대와 개선 방향을 알려줘",
   "1월과 9월을 비교해줘",
   "최대 수요전력을 10% 낮추면 어떻게 돼?",
+  "역률 경보가 뜨면 현장에서 뭘 해야 돼?",
+  "10월 10일 B조 인수인계 내용을 정리해줘",
 ];
 export const MAX_LENGTH = 2000;
 
@@ -20,7 +22,35 @@ const TOOL_LABELS = {
   analyze_power_factor: "역률 분석",
   simulate_peak_cap: "최대 수요 시뮬레이션",
   get_daily_report: "일일 보고서 생성",
+  plan_power_factor_correction: "콘덴서 용량 계산",
+  forecast_alarm: "경보 예측",
+  get_alarm_timeline: "하루 경보 타임라인",
+  summarize_alarms: "경보 기록 요약",
+  search_manual: "현장 매뉴얼 검색",
+  get_shift_handover: "교대 인수인계 정리",
 };
+
+/** 답변 속 [SOP-EN-02 2. 경보가 켜지면] 표기를 매뉴얼 탭으로 가는 링크로 바꾼다. */
+export function linkCitations(text) {
+  return text.replace(/\[((?:SOP|GUIDE)-[A-Z]*-?\d+)([^\]\n]*)\](?!\()/g, (_, id, rest) => `[\\[${id}${rest}\\]](#manual:${id})`);
+}
+
+/** 답변의 숫자가 이번 대화의 도구 결과에 있는지 서버가 검사한 결과 */
+export function Verification({ v }) {
+  if (!v || v.checked === 0) return null;
+  if (v.ok) {
+    return (
+      <p className="verify ok" title="답변의 숫자를 도구 결과와 하나씩 대조했어요.">
+        ✓ 숫자 {v.checked}개 모두 계산 결과와 일치
+      </p>
+    );
+  }
+  return (
+    <p className="verify warn" title="AI가 직접 계산했거나 잘못 옮겼을 수 있어요. 그래프와 도구 결과를 기준으로 보세요.">
+      ⚠ 숫자 {v.checked}개 중 {v.ungrounded.length}개는 계산 결과에서 찾지 못했어요: {v.ungrounded.join(", ")}
+    </p>
+  );
+}
 
 function Item({ item }) {
   switch (item.type) {
@@ -46,7 +76,12 @@ function Item({ item }) {
         </div>
       );
     case "answer":
-      return <MarkdownView text={item.text} />;
+      return (
+        <div className="answer">
+          <MarkdownView text={linkCitations(item.text)} />
+          <Verification v={item.verification} />
+        </div>
+      );
     case "error":
       return (
         <div className="msg-error" role="alert">
@@ -100,6 +135,14 @@ export default function Chat() {
       add({ type: "chart", chart: event.chart });
     } else if (event.type === "answer") {
       add({ type: "answer", text: event.text });
+    } else if (event.type === "verification") {
+      setItems((current) => {
+        const index = current.findLastIndex((item) => item.type === "answer");
+        if (index < 0) return current;
+        const next = [...current];
+        next[index] = { ...next[index], verification: event };
+        return next;
+      });
     } else if (event.type === "error") {
       add({ type: "error", text: event.message });
     }
@@ -146,7 +189,7 @@ export default function Chat() {
     <aside className="agent" aria-label="에너지 에이전트">
       <div className="agent-head">
         <h2>에이전트에게 묻기</h2>
-        <p>모든 수치는 분석 도구가 계산합니다.</p>
+        <p>모든 수치는 분석 도구가 계산하고, 답변의 숫자는 계산 결과와 자동으로 대조합니다.</p>
       </div>
 
       {!agentReady && (

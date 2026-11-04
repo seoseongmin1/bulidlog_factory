@@ -68,6 +68,12 @@ def lookup(date: str) -> dict:
         return {f"{r['time'][11:]}|{r['target']}": r["response"] for r in _load() if r["time"].startswith(date)}
 
 
+def between(start: str, end: str) -> list[dict]:
+    """start ≤ 시각 < end인 기록 (YYYY-MM-DD HH:MM 문자열 비교). 교대 인수인계서의 응답 집계에 쓴다."""
+    with _lock:
+        return [r for r in _load() if start <= r["time"] < end]
+
+
 def stats() -> dict:
     with _lock:
         records = _load()
