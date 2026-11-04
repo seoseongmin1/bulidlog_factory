@@ -68,7 +68,7 @@ function AlarmCard({ title, target, level, label, children, action, reasons, res
 }
 
 /** 고른 시각을 '지금'으로 보고 앞으로 1시간의 사용량·역률 경보를 보여 준다. 숫자는 모두 서버의 예측 모델이 계산한다. */
-export default function Forecast({ onRecorded }) {
+export default function Forecast({ onRecorded, onDelegate }) {
   const [date, setDate] = useState(DEFAULT_FORECAST_DATE);
   const [time, setTime] = useState(DEFAULT_FORECAST_TIME);
   const dateInRange = Boolean(date) && date >= MIN_DATE && date <= MAX_DATE;
@@ -151,6 +151,14 @@ export default function Forecast({ onRecorded }) {
                   </p>
                 </AlarmCard>
               </div>
+              {onDelegate && (data.usage.level !== "good" || data.power_factor.level !== "good") && (
+                <div className="delegate">
+                  <button type="button" className="save-button" onClick={() => onDelegate(`${date} ${time}`)}>
+                    이 경보를 조치 에이전트에게 맡기기
+                  </button>
+                  <span className="muted">에이전트가 조치를 계획하고, 설비 조치는 승인을 받아 가상 공장에 실행해요.</span>
+                </div>
+              )}
               <div className="muted forecast-scores">
                 <p>지난 채점 (9~12월, 이 모델):</p>
                 <ul>

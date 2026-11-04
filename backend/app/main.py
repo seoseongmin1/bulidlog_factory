@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analysis, handover, knowledge, responses
+from . import actions, analysis, handover, knowledge, responder, responses
 from .agent import run_turn
 from . import forecast as alarm_forecast
 from .briefing import daily_briefing
@@ -31,6 +31,11 @@ class AlarmResponse(BaseModel):
     level: str
     probability_pct: int
     response: str
+
+
+class IncidentRequest(BaseModel):
+    time: str = Field(min_length=16, max_length=16)
+    ai: bool = True
 
 
 class ChatRequest(BaseModel):
@@ -194,6 +199,56 @@ def manual_doc(doc_id: str) -> dict:
         return knowledge.document(doc_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
+
+
+def _client(ai: bool = True):
+    return openai.OpenAI() if ai and has_credentials() else None
+
+
+def _incident(incident_id: str) -> dict:
+    try:
+        return actions.get(incident_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
+
+
+@app.post("/api/incidents")
+def open_incident(body: IncidentRequest) -> dict:
+    """경보 시각을 '지금'으로 보고 조치 에이전트가 조사·시뮬레이션·제안까지 한다. 설비 조치는 승인을 기다린다."""
+    try:
+        return actions.public(responder.respond(body.time, _client(body.ai)))
+    except DataUnavailableError:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/incidents/{incident_id}")
+def get_incident(incident_id: str) -> dict:
+    return actions.public(_incident(incident_id))
+
+
+@app.post("/api/incidents/{incident_id}/actions/{action_id}/{decision}")
+def decide_action(incident_id: str, action_id: str, decision: str) -> dict:
+    """작업자의 승인(approve)·거절(reject)·되돌리기(revert). 승인하면 가상 공장에 실행하고 실제 기록으로 검증한다."""
+    incident = _incident(incident_id)
+    try:
+        if decision == "revert":
+            actions.revert(incident, action_id)
+            return actions.public(incident)
+        if decision not in ("approve", "reject"):
+            raise HTTPException(status_code=404, detail="approve, reject, revert 중 하나여야 합니다.")
+        actions.decide(incident, action_id, decision == "approve")
+        return actions.public(responder.after_decision(incident, _client(incident.get("planner") == "ai")))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/api/work-orders")
+def work_orders() -> dict:
+    return {"items": actions.work_orders()[::-1]}
 
 
 @app.post("/api/alarm-responses")
