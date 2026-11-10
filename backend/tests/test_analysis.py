@@ -120,6 +120,7 @@ def test_every_tool_runs_with_valid_input():
         "simulate_peak_cap": {"start": "2018-01-01", "end": "2018-01-31", "reduction_pct": 10},
         "get_daily_report": {"date": "2018-01-18"},
         "forecast_alarm": {"time": "2018-10-10 13:00"},
+        "forecast_day_ahead": {"date": "2018-10-10"},
         "get_alarm_timeline": {"date": "2018-10-10"},
         "summarize_alarms": {"start": "2018-12-01", "end": "2018-12-31"},
         "search_manual": {"query": "역률 경보 대응"},

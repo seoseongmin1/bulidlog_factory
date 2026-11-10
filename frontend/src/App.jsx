@@ -4,6 +4,7 @@ import Anomalies from "./components/Anomalies.jsx";
 import Briefing from "./components/Briefing.jsx";
 import Chat from "./components/Chat.jsx";
 import Dashboard from "./components/Dashboard.jsx";
+import DayAhead from "./components/DayAhead.jsx";
 import Forecast from "./components/Forecast.jsx";
 import Handover from "./components/Handover.jsx";
 import Manual from "./components/Manual.jsx";
@@ -19,6 +20,7 @@ export const CATEGORIES = [
   { id: "day", label: "하루 보기" },
   { id: "handover", label: "교대 인수인계" },
   { id: "forecast", label: "경보 예측" },
+  { id: "tomorrow", label: "내일 예측" },
   { id: "agent", label: "조치 에이전트" },
   { id: "replay", label: "감시 재생" },
   { id: "power-factor", label: "역률 개선" },
@@ -123,6 +125,9 @@ export default function App() {
           <Panel id="forecast" active={active}>
             <Forecast onRecorded={onRecorded} onDelegate={delegate} />
             <ResponseStats version={recorded} />
+          </Panel>
+          <Panel id="tomorrow" active={active}>
+            <DayAhead />
           </Panel>
           <Panel id="agent" active={active}>
             <ActionAgent request={delegated} />

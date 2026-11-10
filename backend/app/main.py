@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import actions, analysis, handover, knowledge, responder, responses
+from . import actions, analysis, dayahead, handover, knowledge, responder, responses
 from .agent import run_turn
 from . import forecast as alarm_forecast
 from .briefing import daily_briefing
@@ -131,6 +131,17 @@ def power_factor_plan(start: str, end: str, target: float) -> dict:
     """09~22시 역률을 목표까지 올리는 콘덴서 용량 계산. 자동 조정기와 고정 콘덴서를 비교한다."""
     try:
         return analysis.plan_power_factor_correction(start, end, target)
+    except DataUnavailableError:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/day-ahead/{date}")
+def day_ahead(date: str) -> dict:
+    """하루 전까지의 데이터로 본 그 날의 위험 시간대와 계획, 같은 방식의 9~12월 채점 결과. AI는 쓰지 않는다."""
+    try:
+        return {**dayahead.day_ahead(date), "scores": dayahead.scores()}
     except DataUnavailableError:
         raise
     except ValueError as exc:

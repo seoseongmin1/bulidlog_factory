@@ -50,10 +50,10 @@ test("개요의 이상한 날에서 날짜를 누르면 하루 보기로 옮겨 
   expect(within(panel("하루 보기")).getByLabelText("보고서 날짜")).toHaveValue("2018-05-26");
 });
 
-test("탭은 여덟 개이고 '내일 예측'과 따로 있던 '이상한 날' 탭은 없다", () => {
+test("탭은 아홉 개이고 따로 있던 '이상한 날' 탭은 없다", () => {
   render(<App />);
   const names = screen.getAllByRole("tab").map((tab) => tab.textContent);
-  expect(names).toEqual(["개요", "하루 보기", "교대 인수인계", "경보 예측", "조치 에이전트", "감시 재생", "역률 개선", "매뉴얼"]);
+  expect(names).toEqual(["개요", "하루 보기", "교대 인수인계", "경보 예측", "내일 예측", "조치 에이전트", "감시 재생", "역률 개선", "매뉴얼"]);
 });
 
 test("#manual:문서번호 주소로 매뉴얼 탭을 열고, 출처 링크를 누르면 그 탭으로 옮긴다", async () => {

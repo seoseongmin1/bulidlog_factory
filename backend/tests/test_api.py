@@ -71,7 +71,3 @@ def test_manual_endpoints():
     assert len(docs["items"]) >= 8 and "예시 문서" in docs["notice"]
     assert client.get("/api/manual/docs/SOP-OP-01").json()["title"] == "교대 인수인계 작성 기준"
     assert client.get("/api/manual/docs/none").status_code == 404
-
-
-def test_day_ahead_was_removed():
-    assert client.get("/api/day-ahead/2018-10-10").status_code in (404, 405)

@@ -1,7 +1,7 @@
 """모델에게 공개하는 도구 정의와 실행기."""
 import json
 
-from . import analysis, forecast, handover, knowledge
+from . import analysis, dayahead, forecast, handover, knowledge
 
 DATE = {"type": "string", "description": "YYYY-MM-DD 형식의 날짜. 2018-01-01 ~ 2018-12-31"}
 METRIC = {"type": "string", "enum": list(analysis.METRICS), "description": "분석할 지표"}
@@ -112,6 +112,12 @@ TOOLS = [
         "기간의 경보 횟수, 헛경보, 실제로 기준을 넘은 횟수와 미리 알린 비율을 구한다. 시간대별 사용량 경보 칸 수는 차트로 표시된다.",
         {"start": DATE, "end": DATE},
     ),
+    _tool(
+        "forecast_day_ahead",
+        "고른 날을 '내일'로 보고, 하루 전까지의 데이터로 그날 2시간 구간마다 사용량 기준을 넘을 위험 시간대(주의·위험)와 "
+        "미리 준비할 계획을 구한다. 지난 4주 같은 날 유형에서 넘은 날의 비율로 본 것이다. 평소 사용량은 차트로 표시된다. 9~12월 채점 결과도 준다.",
+        {"date": DATE},
+    ),
 ]
 
 def openai_tools() -> list[dict]:
@@ -146,6 +152,7 @@ _HANDLERS = {
     "forecast_alarm": forecast.agent_forecast,
     "get_alarm_timeline": forecast.agent_timeline,
     "summarize_alarms": forecast.summarize_alarms,
+    "forecast_day_ahead": dayahead.agent_day_ahead,
 }
 
 
@@ -163,6 +170,8 @@ def _chart_for(name: str, args: dict, result: dict) -> dict | None:
             "kind": "bar",
             "rows": rows,
         }
+    if name == "forecast_day_ahead":
+        return {"title": f"평소 사용량 ({args['date']}, 기준 {result['사용량_기준_kw']}kW)", "unit": "kW", "kind": "line", "rows": rows}
     if name == "get_alarm_timeline":
         return {"title": f"15분 수요전력 ({args['date']}, 기준 {result['사용량_기준_kw']}kW)", "unit": "kW", "kind": "line", "rows": rows}
     metric = result.get("metric", "power_factor" if name == "analyze_power_factor" else "usage_kwh")
